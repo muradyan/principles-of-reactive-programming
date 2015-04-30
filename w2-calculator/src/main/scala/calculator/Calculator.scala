@@ -10,7 +10,9 @@ final case class Divide(a: Expr, b: Expr) extends Expr
 
 object Calculator {
   def computeValues(namedExpressions: Map[String, Signal[Expr]]): Map[String, Signal[Double]] = {
-    namedExpressions.mapValues { exp => Signal(eval(exp(), namedExpressions)) }
+    var result = Map[String, Signal[Double]]()
+    namedExpressions.foreach { case(k, v) => result += k -> Signal(eval(v(), namedExpressions - k)) }
+    result
   }
 
   def eval(expr: Expr, references: Map[String, Signal[Expr]]): Double = expr match {
