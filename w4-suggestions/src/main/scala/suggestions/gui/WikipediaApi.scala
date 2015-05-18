@@ -12,6 +12,7 @@ import rx.subscriptions.CompositeSubscription
 import rx.lang.scala.Observable
 import observablex._
 import search._
+import rx.lang.scala.Notification.{ OnNext, OnError, OnCompleted }
 
 trait WikipediaApi {
 
@@ -37,7 +38,7 @@ trait WikipediaApi {
      *
      * E.g. `"erik", "erik meijer", "martin` should become `"erik", "erik_meijer", "martin"`
      */
-    def sanitized: Observable[String] = ???
+    def sanitized: Observable[String] = obs.map(s => s.replace(' ', '_'))
 
   }
 
@@ -48,7 +49,14 @@ trait WikipediaApi {
      *
      * E.g. `1, 2, 3, !Exception!` should become `Success(1), Success(2), Success(3), Failure(Exception), !TerminateStream!`
      */
-    def recovered: Observable[Try[T]] = ???
+    def recovered: Observable[Try[T]] = obs.materialize takeWhile {
+      case OnNext(s) => true
+      case OnError(e) => true
+      case _ => false
+    } map {
+      case OnNext(s) => Success(s)
+      case OnError(e) => Failure(e)
+    }
 
     /** Emits the events from the `obs` observable, until `totalSec` seconds have elapsed.
      *
@@ -56,7 +64,7 @@ trait WikipediaApi {
      *
      * Note: uses the existing combinators on observables.
      */
-    def timedOut(totalSec: Long): Observable[T] = ???
+    def timedOut(totalSec: Long): Observable[T] = obs.takeUntil(Observable.interval(totalSec.seconds))
 
     /** Given a stream of events `obs` and a method `requestMethod` to map a request `T` into
      * a stream of responses `S`, returns a stream of all the responses wrapped into a `Try`.
@@ -83,7 +91,7 @@ trait WikipediaApi {
      *
      * Observable(Success(1), Succeess(1), Succeess(1), Succeess(2), Succeess(2), Succeess(2), Succeess(3), Succeess(3), Succeess(3))
      */
-    def concatRecovered[S](requestMethod: T => Observable[S]): Observable[Try[S]] = ???
+    def concatRecovered[S](requestMethod: T => Observable[S]): Observable[Try[S]] = obs.concatMap(requestMethod).recovered
 
   }
 

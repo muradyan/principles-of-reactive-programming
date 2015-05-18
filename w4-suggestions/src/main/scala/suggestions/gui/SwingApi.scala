@@ -10,6 +10,7 @@ import scala.util.{ Try, Success, Failure }
 import scala.swing.Reactions.Reaction
 import scala.swing.event.Event
 import rx.lang.scala.Observable
+import rx.lang.scala.Subscription
 
 /** Basic facilities for dealing with Swing-like components.
 *
@@ -51,8 +52,10 @@ trait SwingApi {
       * @param field the text field
       * @return an observable with a stream of text field updates
       */
-    def textValues: Observable[String] = ???
-
+    def textValues: Observable[String] = Observable.create { observer =>
+      field.subscribe{ case ValueChanged(f) => observer.onNext(f.text)}
+      Subscription { observer.onCompleted() }
+    }
   }
 
   implicit class ButtonOps(button: Button) {
@@ -62,7 +65,10 @@ trait SwingApi {
      * @param field the button
      * @return an observable with a stream of buttons that have been clicked
      */
-    def clicks: Observable[Button] = ???
+    def clicks: Observable[Button] = Observable.create { observer =>
+      button.subscribe{ case ButtonClicked(b) => observer.onNext(b)}
+      Subscription { observer.onCompleted() }
+    }
   }
 
 }
