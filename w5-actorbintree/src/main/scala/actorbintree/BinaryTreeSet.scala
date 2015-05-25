@@ -50,16 +50,13 @@ object BinaryTreeSet {
 }
 
 
-class BinaryTreeSet extends Actor {
+class BinaryTreeSet extends Actor with Stash {
   import BinaryTreeSet._
   import BinaryTreeNode._
 
   def createRoot: ActorRef = context.actorOf(BinaryTreeNode.props(0, initiallyRemoved = true))
 
   var root = createRoot
-
-  // optional
-  var pendingQueue = Queue.empty[Operation]
 
   // optional
   def receive = normal
@@ -81,15 +78,11 @@ class BinaryTreeSet extends Actor {
     * all non-removed elements into.
     */
   def garbageCollecting(newRoot: ActorRef): Receive = { 
-    case o: Operation => pendingQueue.enqueue(o)
+    case o: Operation => stash()
     case CopyFinished => {
-      while (!pendingQueue.isEmpty) {
-        val (o, q) = pendingQueue.dequeue
-        newRoot ! o
-        pendingQueue = q
-      }
       root ! PoisonPill
       root = newRoot
+      unstashAll()
       context.become(normal)
     }
   }
@@ -171,13 +164,14 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor {
       }
         
     case CopyTo(treeNode: ActorRef) => {
-      if (removed && subtrees.isEmpty) {
-        context.parent ! CopyFinished
-      } else {
-        if (!removed) treeNode ! Insert(self, elem, elem)
-        val children = subtrees.values.toSet
-        children.foreach { a => a ! CopyTo(treeNode) }
-        context.become(copying(children, false))
+      val children = subtrees.values.toSet
+      removed match {
+        case true if children.isEmpty => context.parent ! CopyFinished
+        case _ => {
+          if (!removed) treeNode ! Insert(self, elem, elem)
+          children foreach { _ ! CopyTo(treeNode) }
+          context become copying(children, removed)
+        }
       }
     }
   }
@@ -187,20 +181,9 @@ class BinaryTreeNode(val elem: Int, initiallyRemoved: Boolean) extends Actor {
     * `insertConfirmed` tracks whether the copy of this node to the new tree has been confirmed.
     */
   def copying(expected: Set[ActorRef], insertConfirmed: Boolean): Receive = {
-    case OperationFinished(id) => {
-      if (expected.isEmpty && insertConfirmed) {
-        context.parent ! CopyFinished
-      } else {
-        context.become(copying(expected, true))
-      }
-    }
-    case CopyFinished => {
-      val rest = expected - sender
-      if (rest.isEmpty && insertConfirmed) {
-        context.parent ! CopyFinished
-      } else {
-        context.become(copying(rest, insertConfirmed))
-      }
-    }
+    case CopyFinished if (insertConfirmed && expected.size == 1) => context.parent ! CopyFinished
+    case OperationFinished(elem) if (expected.isEmpty)            => context.parent ! CopyFinished
+    case CopyFinished                                            => context become copying(expected - sender, insertConfirmed)
+    case OperationFinished(elem)                                  => context become copying(expected, true)
   }
 }
